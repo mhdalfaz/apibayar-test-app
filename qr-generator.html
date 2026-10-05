@@ -1,0 +1,267 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>QR Generator &mdash; API Bayar Test App</title>
+    <link rel="stylesheet" href="assets/theme.css">
+</head>
+<body>
+
+<div id="chrome"></div>
+
+<main class="page">
+    <h1>QR Generator</h1>
+    <p class="lede">
+        Generator QR biasa untuk mengubah string QRIS / payload dari response API
+        menjadi QR code yang bisa discan aplikasi pembayaran.
+    </p>
+
+    <section class="card">
+        <div class="card__head">
+            <h2 style="margin:0">Input</h2>
+            <span class="card__hint">tempel string QR atau response JSON API</span>
+        </div>
+
+        <div class="field">
+            <label for="qrInput">String / JSON</label>
+            <textarea class="mono" id="qrInput" rows="6" spellcheck="false"
+                placeholder="00020101021226580017ID.CO.NUSAPAY.WWW0118936008360000001307020413070303UKE51360017ID.CO.NUSAPAY.xxx"></textarea>
+        </div>
+
+        <div class="grid-3">
+            <div class="field">
+                <label for="sizeSelect">Ukuran</label>
+                <select id="sizeSelect">
+                    <option value="200">200 px</option>
+                    <option value="280" selected>280 px</option>
+                    <option value="360">360 px</option>
+                    <option value="480">480 px</option>
+                </select>
+            </div>
+            <div class="field">
+                <label for="eccSelect">Error correction</label>
+                <select id="eccSelect">
+                    <option value="L">L &mdash; 7%</option>
+                    <option value="M" selected>M &mdash; 15%</option>
+                    <option value="Q">Q &mdash; 25%</option>
+                    <option value="H">H &mdash; 30%</option>
+                </select>
+            </div>
+            <div class="field">
+                <label for="marginSelect">Margin</label>
+                <select id="marginSelect">
+                    <option value="0">0 modul</option>
+                    <option value="1">1 modul</option>
+                    <option value="2" selected>2 modul</option>
+                    <option value="4">4 modul</option>
+                </select>
+            </div>
+        </div>
+
+        <div class="row">
+            <button class="btn" id="generateBtn">Generate QR</button>
+            <button class="btn btn--ghost btn--sm" id="pickQrBtn">Ambil dari JSON</button>
+            <button class="btn btn--ghost btn--sm" id="copyBtn">Copy String</button>
+            <button class="btn btn--ghost btn--sm" id="downloadBtn" disabled>Download PNG</button>
+            <button class="btn btn--ghost btn--sm" id="clearBtn">Bersihkan</button>
+        </div>
+
+        <div class="alert alert--error" id="errorBox" hidden></div>
+    </section>
+
+    <section class="card">
+        <div class="card__head">
+            <h2 style="margin:0">Hasil</h2>
+            <span class="card__hint" id="metaText"></span>
+        </div>
+        <div class="qr-stage" id="qrStage">
+            <div class="empty">QR code akan muncul di sini</div>
+        </div>
+    </section>
+
+    <section class="card">
+        <div class="card__head">
+            <h2 style="margin:0">Cara Pakai</h2>
+        </div>
+        <div class="notice">
+            <ol style="margin:0;padding-left:18px;line-height:1.8">
+                <li>Di halaman <a href="payment-link.html">Payment Link</a>, jalankan transaksi sampai response API muncul.</li>
+                <li>Copy response JSON, lalu paste di textarea atas halaman ini.</li>
+                <li>Klik <strong>Ambil dari JSON</strong> — field QR akan diekstrak otomatis.</li>
+                <li>Klik <strong>Generate QR</strong>, lalu scan dengan aplikasi pembayaran.</li>
+            </ol>
+        </div>
+    </section>
+
+    <footer class="footer">
+        <a href="index.html">&larr; Kembali ke daftar tool</a>
+    </footer>
+</main>
+
+<script src="https://cdn.jsdelivr.net/npm/qrcode/build/qrcode.min.js"></script>
+<script src="assets/app.js"></script>
+<script>
+(function () {
+    const $ = (id) => document.getElementById(id);
+
+    App.mountChrome();
+
+    const QR_KEYS = ['qrCode', 'qr_code', 'qrString', 'qr_string', 'qrStringContent', 'qrContent', 'qr', 'payload', 'qrCodeContent'];
+    let currentPayload = '';
+
+    function showError(msg) {
+        $('errorBox').textContent = msg;
+        $('errorBox').hidden = !msg;
+    }
+
+    /**
+     * Cari field QR di dalam object response API secara rekursif.
+     * Prioritaskan key yang umum dipakai API Bayar.
+     */
+    function findQrValue(node, depth = 0) {
+        if (!node || depth > 6) return null;
+        if (typeof node === 'string') {
+            return /^(0002|http)/i.test(node.trim()) ? node.trim() : null;
+        }
+        if (Array.isArray(node)) {
+            for (const item of node) {
+                const found = findQrValue(item, depth + 1);
+                if (found) return found;
+            }
+            return null;
+        }
+        if (typeof node !== 'object') return null;
+
+        for (const key of QR_KEYS) {
+            const value = node[key];
+            if (typeof value === 'string' && value.trim()) return value.trim();
+        }
+        for (const value of Object.values(node)) {
+            const found = findQrValue(value, depth + 1);
+            if (found) return found;
+        }
+        return null;
+    }
+
+    $('pickQrBtn').addEventListener('click', () => {
+        const raw = $('qrInput').value.trim();
+        if (!raw) return showError('Isi dulu textarea dengan response JSON atau string QR.');
+
+        if (!raw.startsWith('{') && !raw.startsWith('[')) {
+            showError('Input bukan JSON, akan dipakai apa adanya sebagai string QR.');
+            return;
+        }
+        try {
+            const json = JSON.parse(raw);
+            const value = findQrValue(json);
+            if (!value) return showError('Tidak ditemukan field QR di JSON ini. Periksa key response-nya.');
+            $('qrInput').value = value;
+            showError('');
+        } catch (err) {
+            showError('JSON tidak valid: ' + err.message);
+        }
+    });
+
+    function render(text) {
+        const stage = $('qrStage');
+        stage.innerHTML = '';
+        showError('');
+
+        QRCode.toCanvas(
+            text,
+            {
+                width: Number($('sizeSelect').value),
+                margin: Number($('marginSelect').value),
+                errorCorrectionLevel: $('eccSelect').value,
+                color: { dark: '#000000', light: '#ffffff' },
+            },
+            function (err, canvas) {
+                if (err) {
+                    stage.innerHTML = '<div class="empty">QR gagal dibuat.</div>';
+                    showError('Gagal membuat QR: ' + err.message);
+                    $('downloadBtn').disabled = true;
+                    return;
+                }
+                stage.appendChild(canvas);
+                currentPayload = text;
+                $('downloadBtn').disabled = false;
+                $('metaText').textContent = `${text.length} karakter · ${$('sizeSelect').value}px · ECC ${$('eccSelect').value}`;
+            }
+        );
+    }
+
+    function generate() {
+        const text = $('qrInput').value.trim();
+        if (!text) {
+            showError('Isi dulu textarea dengan string QR atau response JSON.');
+            return;
+        }
+        if (/^\s*[[{]/.test(text)) {
+            const value = findQrValue(JSON.parse(text));
+            if (value) return render(value);
+        }
+        render(text);
+    }
+
+    $('generateBtn').addEventListener('click', () => {
+        try {
+            generate();
+        } catch (err) {
+            showError('Gagal generate: ' + err.message);
+        }
+    });
+
+    $('qrInput').addEventListener('keydown', (e) => {
+        if (e.key === 'Enter' && !e.shiftKey && !e.ctrlKey) {
+            e.preventDefault();
+            $('generateBtn').click();
+        }
+    });
+
+    $('copyBtn').addEventListener('click', async () => {
+        const value = currentPayload || $('qrInput').value.trim();
+        if (!value) return showError('Tidak ada string untuk dicopy.');
+        try {
+            await navigator.clipboard.writeText(value);
+            $('copyBtn').textContent = 'Tersalin';
+        } catch (_) {
+            showError('Browser menolak clipboard. Select manual dan tekan Ctrl+C.');
+        }
+        setTimeout(() => ($('copyBtn').textContent = 'Copy String'), 1200);
+    });
+
+    $('downloadBtn').addEventListener('click', () => {
+        const canvas = $('qrStage').querySelector('canvas');
+        if (!canvas) return;
+        const link = document.createElement('a');
+        link.download = `apibayar-qr-${Date.now()}.png`;
+        link.href = canvas.toDataURL('image/png');
+        link.click();
+    });
+
+    $('clearBtn').addEventListener('click', () => {
+        $('qrInput').value = '';
+        $('qrStage').innerHTML = '<div class="empty">QR code akan muncul di sini</div>';
+        $('metaText').textContent = '';
+        $('downloadBtn').disabled = true;
+        currentPayload = '';
+        showError('');
+    });
+
+    const params = new URLSearchParams(location.search);
+    const fromLink = params.get('data');
+    if (fromLink) {
+        try {
+            const parsed = JSON.parse(fromLink);
+            const value = findQrValue(parsed);
+            if (value) {
+                $('qrInput').value = value;
+                render(value);
+            }
+        } catch (_) {}
+    }
+})();
+</script>
+</body>
+</html>

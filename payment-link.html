@@ -1,0 +1,276 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Payment Link &mdash; API Bayar Test App</title>
+    <link rel="stylesheet" href="assets/theme.css">
+</head>
+<body>
+
+<div id="chrome"></div>
+
+<main class="page">
+    <h1>Payment Link</h1>
+    <p class="lede">
+        Token widget digenerate dari secret merchant, lalu widget dibuka supaya bisa
+        langsung scan QR / bayar lewat VA, bank transfer, atau e-wallet.
+    </p>
+
+    <section class="card">
+        <div class="card__head">
+            <h2 style="margin:0">Parameter Transaksi</h2>
+            <span class="card__hint" id="envHint"></span>
+        </div>
+
+        <div class="field">
+            <label for="referenceId">Reference ID</label>
+            <div class="row">
+                <input type="text" class="mono" id="referenceId" style="flex:1;min-width:220px">
+                <button class="btn btn--ghost btn--sm" id="genRef">Generate</button>
+            </div>
+        </div>
+
+        <div class="grid-2">
+            <div class="field">
+                <label for="nominal">Nominal</label>
+                <input type="number" id="nominal" value="15000" min="1" step="1">
+            </div>
+            <div class="field">
+                <label for="currency">Mata Uang</label>
+                <select id="currency">
+                    <option value="IDR">IDR</option>
+                    <option value="MYR">MYR</option>
+                </select>
+            </div>
+        </div>
+
+        <div class="grid-2">
+            <div class="field">
+                <label for="description">Deskripsi</label>
+                <input type="text" id="description" value="Test pembayaran via widget">
+            </div>
+            <div class="field">
+                <label for="customerName">Nama pelanggan</label>
+                <input type="text" id="customerName" value="Budi Test" placeholder="opsional">
+            </div>
+        </div>
+
+        <div class="divider"></div>
+
+        <div class="row" style="margin-bottom:14px">
+            <label class="check">
+                <input type="checkbox" id="applyDiscount">
+                <span>Simulasikan diskon 10%</span>
+            </label>
+            </div>
+
+        <div class="summary" id="summary">
+            <div class="summary__row"><span>Subtotal</span><span id="sumSubtotal">-</span></div>
+            <div class="summary__row"><span>Diskon</span><span id="sumDiscount">-</span></div>
+            <div class="summary__row"><span>Biaya layanan</span><span id="sumFee">-</span></div>
+            <div class="summary__row summary__row--total"><span>Total</span><span id="sumTotal">-</span></div>
+        </div>
+
+        <div class="divider"></div>
+
+        <button class="btn btn--block" id="payButton">Bayar Sekarang</button>
+        <div class="alert alert--error" id="payError" hidden></div>
+    </section>
+
+    <section class="card">
+        <div class="card__head">
+            <h2 style="margin:0">Response API</h2>
+            <div class="row">
+                <button class="btn btn--ghost btn--sm" id="copyResponse">Copy</button>
+                <button class="btn btn--ghost btn--sm" id="toggleRaw">Tampilkan</button>
+            </div>
+        </div>
+        <div class="empty" id="rawEmpty">Belum ada request yang dijalankan.</div>
+        <pre class="output hidden" id="rawOutput"></pre>
+
+        <div id="qrBox" class="hidden" style="margin-top:18px">
+            <div class="card__head"><h2 style="margin:0">QR dari Response</h2></div>
+            <div class="qr-stage"><canvas id="qrCanvas"></canvas></div>
+            <div class="row" style="margin-top:12px;justify-content:center">
+                <a class="btn btn--ghost btn--sm" id="openQrPage" href="qr-generator.html" target="_blank">Buka di QR Generator</a>
+            </div>
+        </div>
+    </section>
+
+    <div id="payment-widget"></div>
+
+    <footer class="footer">
+        <a href="index.html">&larr; Kembali ke daftar tool</a>
+    </footer>
+</main>
+
+<script src="https://cdn.jsdelivr.net/npm/qrcode/build/qrcode.min.js"></script>
+<script src="assets/app.js"></script>
+<script>
+(function () {
+    const $ = (id) => document.getElementById(id);
+
+    if (!App.requireToken()) return;
+
+    App.mountChrome();
+    $('envHint').textContent = `${App.config().label} · ${App.config().apiBase}`;
+
+    let lastResponse = null;
+
+    function generateReferenceId() {
+        const now = new Date();
+        const dd = String(now.getDate()).padStart(2, '0');
+        const mm = String(now.getMonth() + 1).padStart(2, '0');
+        const yy = String(now.getFullYear()).slice(-2);
+        const last6 = String(now.getTime()).slice(-6);
+        return `TRX${dd}${mm}${yy}${last6}`;
+    }
+
+    function genRef() {
+        $('referenceId').value = generateReferenceId();
+    }
+    genRef();
+    $('genRef').addEventListener('click', genRef);
+
+    function calcTotal() {
+        const currency = $('currency').value;
+        const nominal = parseInt($('nominal').value, 10) || 0;
+        const discount = $('applyDiscount').checked ? Math.round(nominal * 0.1) : 0;
+        const fee = 0;
+        const total = Math.max(nominal - discount, 0);
+        $('sumSubtotal').textContent = App.formatMoney(nominal, currency);
+        $('sumDiscount').textContent = '- ' + App.formatMoney(discount, currency);
+        $('sumFee').textContent = App.formatMoney(fee, currency);
+        $('sumTotal').textContent = App.formatMoney(total, currency);
+        return { nominal: total, currency };
+    }
+
+    $('nominal').addEventListener('input', calcTotal);
+    $('currency').addEventListener('change', calcTotal);
+    $('applyDiscount').addEventListener('change', calcTotal);
+    calcTotal();
+
+    function showError(msg) {
+        $('payError').textContent = msg;
+        $('payError').hidden = false;
+    }
+
+    function setLoading(on) {
+        const btn = $('payButton');
+        btn.disabled = on;
+        btn.textContent = on ? 'Memproses...' : 'Bayar Sekarang';
+    }
+
+    function renderResponse(json) {
+        lastResponse = json;
+        $('rawEmpty').classList.add('hidden');
+        $('rawOutput').textContent = JSON.stringify(json, null, 2);
+
+        const qr = json && json.data && json.data.qrCode;
+        if (qr) {
+            $('qrBox').classList.remove('hidden');
+            QRCode.toCanvas($('qrCanvas'), qr, {
+                width: 240,
+                margin: 1,
+                color: { dark: '#000000', light: '#ffffff' },
+            }, (err) => {
+                if (err) $('qrBox').classList.add('hidden');
+            });
+            $('openQrPage').href = `qr-generator.html?data=${encodeURIComponent(JSON.stringify({ qrCode: qr }))}`;
+        }
+    }
+
+    $('toggleRaw').addEventListener('click', () => {
+        const out = $('rawOutput');
+        const hidden = out.classList.toggle('hidden');
+        $('toggleRaw').textContent = hidden ? 'Tampilkan' : 'Sembunyikan';
+    });
+
+    $('copyResponse').addEventListener('click', async () => {
+        if (!lastResponse) return;
+        try {
+            await navigator.clipboard.writeText(JSON.stringify(lastResponse, null, 2));
+            $('copyResponse').textContent = 'Tersalin';
+        } catch (_) {
+            $('copyResponse').textContent = 'Gagal';
+        }
+        setTimeout(() => ($('copyResponse').textContent = 'Copy'), 1200);
+    });
+
+    $('payButton').addEventListener('click', async () => {
+        $('payError').hidden = true;
+        const { nominal, currency } = calcTotal();
+
+        if (!nominal || nominal < 1) return showError('Nominal tidak valid.');
+        if (currency === 'IDR' && nominal < 10000) return showError('Minimal pembayaran IDR adalah Rp 10.000.');
+        if (currency === 'MYR' && nominal < 1) return showError('Minimal pembayaran MYR adalah RM 1.');
+
+        const referenceId = $('referenceId').value.trim() || generateReferenceId();
+        $('referenceId').value = referenceId;
+
+        setLoading(true);
+        try {
+            const metadata = {};
+            const name = $('customerName').value.trim();
+            if (name) {
+                const parts = name.split(' ');
+                metadata.firstName = parts[0];
+                metadata.lastName = parts.slice(1).join(' ') || parts[0];
+            }
+
+            const json = await App.apiFetch('/payment/v1/widget/token/server', {
+                method: 'POST',
+                body: {
+                    referenceId,
+                    nominal,
+                    currency,
+                    metadata: {
+                        description: $('description').value.trim(),
+                        source: 'apibayar-test-app',
+                        ...metadata,
+                    },
+                },
+            });
+
+            renderResponse(json);
+
+            const accessToken = json?.data?.token;
+            if (!accessToken) throw new Error('Response tidak memuat data.token.');
+
+            const lib = await App.loadWidgetScript();
+            const Widget = lib.APIBayarWidget || lib.default;
+            const widget = new Widget();
+
+            widget.init({
+                access_token: accessToken,
+                sandbox: App.config().sandbox,
+            });
+
+            widget.on('payment-success', (event, data) => {
+                console.log('payment-success', data);
+                showError('');
+                $('payError').hidden = true;
+                alert('Pembayaran berhasil.');
+            });
+            widget.on('payment-failed', (event, data) => {
+                console.log('payment-failed', data);
+                alert('Pembayaran gagal: ' + ((data && data.message) || 'tidak diketahui'));
+            });
+            widget.on('error', (event, data) => {
+                console.error('widget error', data);
+                showError('Widget error: ' + ((data && data.message) || 'tidak diketahui'));
+            });
+
+            widget.open();
+        } catch (err) {
+            console.error(err);
+            showError(err.message);
+        } finally {
+            setLoading(false);
+        }
+    });
+})();
+</script>
+</body>
+</html>

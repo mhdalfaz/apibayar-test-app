@@ -1,0 +1,260 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>API Bayar Test App</title>
+    <link rel="stylesheet" href="assets/theme.css">
+</head>
+<body>
+
+<header class="topbar">
+    <div class="topbar__inner">
+        <a class="topbar__brand" href="index.html">
+            <span class="topbar__mark">A</span>
+            <span>API Bayar Test App</span>
+        </a>
+        <div class="topbar__meta" id="tokenStatus"></div>
+    </div>
+</header>
+
+<main class="page">
+    <h1>API Bayar Test App</h1>
+    <p class="lede">
+        Tempel bearer token merchant (Base64 <code>API_KEY:API_SECRET</code>) di bawah,
+        lalu pilih tool yang mau dites. Token disimpan di browser saja, tidak pernah
+        dikirim ke server mana pun selain API Bayar.
+    </p>
+
+    <div class="alert" id="needAlert" hidden>
+        <strong>Token belum ada.</strong> Halaman yang mau kamu buka butuh bearer token.
+        Isi dulu form di bawah, lalu buka ulang tool-nya.
+    </div>
+
+    <section class="card" id="token">
+        <div class="card__head">
+            <h2 style="margin:0">Bearer Token</h2>
+            <span class="card__hint">disimpan di sessionStorage, hilang saat tab ditutup</span>
+        </div>
+
+        <div class="field">
+            <label for="tokenInput">Secret token merchant</label>
+            <textarea class="mono" id="tokenInput" rows="3" spellcheck="false"
+                placeholder="ZGV2OmpjMGM3YTcwZmM2ZjM5YTg1ODg1ZmVkZTk5N2UxZDA1N2FkZjYxNjJlNDMxZWU3..."></textarea>
+        </div>
+
+        <div class="grid-3">
+            <div class="field">
+                <label for="envSelect">Environment</label>
+                <select id="envSelect">
+                    <option value="development">Development (sandbox)</option>
+                    <option value="production">Production</option>
+                </select>
+            </div>
+            <div class="field">
+                <label for="ttlSelect">Masa aktif token</label>
+                <select id="ttlSelect">
+                    <option value="15">15 menit</option>
+                    <option value="30">30 menit</option>
+                    <option value="60" selected>1 jam</option>
+                    <option value="240">4 jam</option>
+                    <option value="0">Tanpa expiry (sampai tab ditutup)</option>
+                </select>
+            </div>
+            <div class="field">
+                <label for="tokenAction">&nbsp;</label>
+                <button class="btn btn--block" id="saveToken">Simpan Token</button>
+            </div>
+        </div>
+
+        <div class="row" style="margin-bottom:14px">
+            <label class="check">
+                <input type="checkbox" id="rememberToken">
+                <span>Ingat di browser (localStorage, bertahan saat reload)</span>
+            </label>
+        </div>
+
+        <div class="row">
+            <button class="btn btn--ghost btn--sm" id="clearToken">Hapus Token</button>
+            <button class="btn btn--ghost btn--sm" id="copyToken">Copy Token</button>
+            <span class="small muted" id="tokenInfo"></span>
+        </div>
+
+        <div class="alert alert--error" id="tokenError" hidden></div>
+
+        <hr class="divider">
+
+        <div class="row">
+            <button class="btn btn--ghost btn--sm" id="testConnection">Test Koneksi API</button>
+            <span class="small muted" id="testResult"></span>
+        </div>
+        <pre class="output hidden" id="testOutput" style="margin-top:12px"></pre>
+    </section>
+
+    <section class="card">
+        <div class="card__head">
+            <h2 style="margin:0">Tools</h2>
+            <span class="card__hint" id="toolsHint"></span>
+        </div>
+        <div class="tool-grid">
+            <a class="tool" href="payment-link.html" data-tool="payment-link">
+                <span class="tool__title">Payment Link (Widget)</span>
+                <span class="tool__desc">
+                    Generate widget token dari secret merchant lalu buka payment widget
+                    untuk scan QR / VA / e-wallet.
+                </span>
+                <span class="tool__go">Buka &rarr;</span>
+            </a>
+            <a class="tool" href="qr-generator.html" data-tool="qr-generator">
+                <span class="tool__title">QR Generator</span>
+                <span class="tool__desc">
+                    Ubah string QRIS / payload dari response API menjadi QR code
+                    yang bisa discan untuk bayar.
+                </span>
+                <span class="tool__go">Buka &rarr;</span>
+            </a>
+        </div>
+    </section>
+
+    <footer class="footer">
+        Repo test internal API Bayar &middot; tanpa build step, buka <code>index.html</code> langsung
+        atau jalankan <code>./serve.ps1</code>.
+    </footer>
+</main>
+
+<script src="assets/app.js"></script>
+<script>
+(function () {
+    const $ = (id) => document.getElementById(id);
+    const params = new URLSearchParams(location.search);
+
+    if (params.get('need') === '1') $('needAlert').hidden = false;
+
+    $('envSelect').value = App.env();
+    $('envSelect').addEventListener('change', (e) => {
+        App.setEnv(e.target.value);
+        App.mountIndexChrome();
+        renderTokenInfo();
+    });
+
+    if (App.token()) {
+        $('tokenInput').value = App.token();
+        const meta = App.meta();
+        if (meta.remember) $('rememberToken').checked = true;
+        if (meta.expiresAt) {
+            const leftMin = Math.ceil((meta.expiresAt - Date.now()) / 60000);
+            const opt = [...$('ttlSelect').options].find((o) => Math.abs(Number(o.value) - leftMin) <= 1);
+            if (opt) $('ttlSelect').value = opt.value;
+        }
+    }
+
+    function renderTokenInfo() {
+        const token = App.token();
+        const info = $('tokenInfo');
+        if (!token) {
+            info.textContent = '';
+            return;
+        }
+        const decoded = App.decodeTokenInfo(token);
+        const detected = App.detectEnv(token);
+        const mismatch = detected && detected !== App.env()
+            ? ` · warning: prefix token=${detected} tapi env aktif ${App.env()}`
+            : '';
+        info.textContent = `API key: ${decoded.apiKey || '?'}${mismatch}`;
+        $('toolsHint').textContent = 'token siap dipakai';
+    }
+
+    function showError(msg) {
+        const el = $('tokenError');
+        el.textContent = msg;
+        el.hidden = false;
+    }
+
+    $('saveToken').addEventListener('click', () => {
+        $('tokenError').hidden = true;
+        const ttl = Number($('ttlSelect').value);
+        const res = App.save($('tokenInput').value, {
+            ttlMinutes: ttl > 0 ? ttl : null,
+            remember: $('rememberToken').checked,
+        });
+        if (!res.ok) return showError(res.error);
+        App.mountIndexChrome();
+        renderTokenInfo();
+        showSaved();
+    });
+
+    function showSaved() {
+        const btn = $('saveToken');
+        const original = btn.textContent;
+        btn.textContent = 'Tersimpan';
+        btn.disabled = true;
+        setTimeout(() => {
+            btn.textContent = original;
+            btn.disabled = false;
+        }, 1200);
+    }
+
+    $('clearToken').addEventListener('click', () => {
+        App.clear();
+        $('tokenInput').value = '';
+        $('tokenError').hidden = true;
+        App.mountIndexChrome();
+        renderTokenInfo();
+        $('toolsHint').textContent = 'token dikosongkan';
+    });
+
+    $('copyToken').addEventListener('click', async () => {
+        const token = App.token() || $('tokenInput').value.trim();
+        if (!token) return showError('Tidak ada token untuk dicopy.');
+        try {
+            await navigator.clipboard.writeText(token);
+            $('tokenInfo').textContent = 'Token dicopy ke clipboard.';
+        } catch (err) {
+            $('tokenInput').select();
+            showError('Clipboard ditolak browser. Selected manual, tekan Ctrl+C.');
+        }
+    });
+
+    $('testConnection').addEventListener('click', async () => {
+        const btn = $('testConnection');
+        const out = $('testOutput');
+        const result = $('testResult');
+        btn.disabled = true;
+        btn.textContent = 'Testing...';
+        result.textContent = '';
+        out.classList.add('hidden');
+
+        const token = App.token() || $('tokenInput').value.trim();
+        const cfg = App.config();
+        const lines = [`POST ${cfg.apiBase}/payment/v1/widget/token/server`];
+
+        try {
+            const json = await App.apiFetch('/payment/v1/widget/token/server', {
+                method: 'POST',
+                token,
+                body: {
+                    referenceId: `TEST${Date.now()}`,
+                    nominal: 10000,
+                    currency: 'IDR',
+                },
+            });
+            out.textContent = JSON.stringify(json, null, 2);
+            out.classList.remove('hidden');
+            result.textContent = 'OK — token widget berhasil dibuat.';
+        } catch (err) {
+            result.textContent = 'Gagal: ' + err.message;
+            lines.push('', 'Error: ' + err.message);
+            out.textContent = lines.join('\n');
+            out.classList.remove('hidden');
+        } finally {
+            btn.disabled = false;
+            btn.textContent = 'Test Koneksi API';
+        }
+    });
+
+    renderTokenInfo();
+    App.mountIndexChrome();
+})();
+</script>
+</body>
+</html>
