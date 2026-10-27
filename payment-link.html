@@ -58,6 +58,177 @@
 
         <div class="divider"></div>
 
+        <div class="section-head">
+            <h3>Data Tambahan <span class="muted small" style="text-transform:none;letter-spacing:0">(opsional)</span></h3>
+            <div class="row">
+                <button class="btn btn--ghost btn--sm" id="fillSample" type="button">Isi data contoh</button>
+                <button class="btn btn--ghost btn--sm" id="clearExtra" type="button">Kosongkan</button>
+            </div>
+        </div>
+        <p class="muted small" style="margin:0 0 12px">
+            Dikirim ke widget lewat <span class="mono">setPaymentMetadata()</span>. Credit Card dan Paylater
+            baru bisa dipilih di widget kalau data yang dibutuhkan sudah lengkap.
+        </p>
+
+        <details class="accordion" id="accContact">
+            <summary>
+                <div class="accordion__title">
+                    <strong>Kontak Pelanggan</strong>
+                    <span>Email &amp; no HP &middot; wajib untuk Credit Card, Paylater, OVO</span>
+                </div>
+            </summary>
+            <div class="accordion__body">
+                <div class="grid-2">
+                    <div class="field">
+                        <label for="customerEmail">Email</label>
+                        <input type="email" id="customerEmail" placeholder="budi@example.com">
+                    </div>
+                    <div class="field">
+                        <label for="customerPhone">No HP</label>
+                        <input type="tel" id="customerPhone" placeholder="+6281234567890">
+                    </div>
+                </div>
+                <p class="muted small" style="margin:0">Paylater mewajibkan format <span class="mono">+62...</span>.</p>
+            </div>
+        </details>
+
+        <details class="accordion" id="accBilling">
+            <summary>
+                <div class="accordion__title">
+                    <strong>Alamat Billing</strong>
+                    <span>Wajib untuk Paylater (Indodana, Shopee Paylater)</span>
+                </div>
+            </summary>
+            <div class="accordion__body">
+                <div class="field">
+                    <label for="billStreet">Jalan</label>
+                    <input type="text" id="billStreet" placeholder="Jl. Sudirman No. 1">
+                </div>
+                <div class="grid-3">
+                    <div class="field">
+                        <label for="billCity">Kota</label>
+                        <input type="text" id="billCity" placeholder="Jakarta">
+                    </div>
+                    <div class="field">
+                        <label for="billPostcode">Kode pos</label>
+                        <input type="text" id="billPostcode" placeholder="10220">
+                    </div>
+                    <div class="field">
+                        <label for="billProvince">Provinsi</label>
+                        <input type="text" id="billProvince" placeholder="DKI Jakarta">
+                    </div>
+                </div>
+            </div>
+        </details>
+
+        <details class="accordion" id="accItem">
+            <summary>
+                <div class="accordion__title">
+                    <strong>Item</strong>
+                    <span>Wajib untuk Paylater &middot; harga kosong = total transaksi</span>
+                </div>
+            </summary>
+            <div class="accordion__body">
+                <div class="grid-2">
+                    <div class="field">
+                        <label for="itemName">Nama item</label>
+                        <input type="text" id="itemName" placeholder="Test Item">
+                    </div>
+                    <div class="field">
+                        <label for="itemCategory">Kategori</label>
+                        <input type="text" id="itemCategory" placeholder="others">
+                    </div>
+                </div>
+                <div class="grid-2">
+                    <div class="field">
+                        <label for="itemQty">Jumlah</label>
+                        <input type="number" id="itemQty" min="1" step="1" placeholder="1">
+                    </div>
+                    <div class="field">
+                        <label for="itemPrice">Harga satuan</label>
+                        <input type="number" id="itemPrice" min="1" step="1" placeholder="otomatis = total">
+                    </div>
+                </div>
+                <div class="grid-2">
+                    <div class="field">
+                        <label for="itemUrl">URL item</label>
+                        <input type="url" id="itemUrl" placeholder="https://example.com/item">
+                    </div>
+                    <div class="field">
+                        <label for="itemDesc">Deskripsi item</label>
+                        <input type="text" id="itemDesc" placeholder="Test item">
+                    </div>
+                </div>
+            </div>
+        </details>
+
+        <details class="accordion" id="accUrl">
+            <summary>
+                <div class="accordion__title">
+                    <strong>URL Redirect</strong>
+                    <span>Wajib untuk Paylater &middot; tujuan setelah bayar sukses / gagal</span>
+                </div>
+            </summary>
+            <div class="accordion__body">
+                <div class="grid-2">
+                    <div class="field">
+                        <label for="successUrl">Success URL</label>
+                        <input type="url" id="successUrl" placeholder="https://example.com/success">
+                    </div>
+                    <div class="field">
+                        <label for="failUrl">Fail URL</label>
+                        <input type="url" id="failUrl" placeholder="https://example.com/fail">
+                    </div>
+                </div>
+            </div>
+        </details>
+
+        <details class="accordion" id="accRecurring">
+            <summary>
+                <div class="accordion__title">
+                    <strong>Credit Card Recurring</strong>
+                    <span>Isi untuk mengaktifkan opsi CC Recurring</span>
+                </div>
+            </summary>
+            <div class="accordion__body">
+                <div class="grid-3">
+                    <div class="field">
+                        <label for="recUnit">Interval unit</label>
+                        <select id="recUnit">
+                            <option value="">— tidak dipakai —</option>
+                            <option value="daily">daily</option>
+                            <option value="weekly">weekly</option>
+                            <option value="monthly">monthly</option>
+                        </select>
+                    </div>
+                    <div class="field">
+                        <label for="recInterval">Interval</label>
+                        <input type="number" id="recInterval" min="1" step="1" placeholder="1">
+                    </div>
+                    <div class="field">
+                        <label for="recMax">Max interval</label>
+                        <input type="number" id="recMax" min="1" step="1" placeholder="3">
+                    </div>
+                </div>
+                <div class="grid-2">
+                    <div class="field">
+                        <label for="recStart">Start date (YYYYMMDD)</label>
+                        <input type="text" class="mono" id="recStart" placeholder="kosong = besok">
+                    </div>
+                    <div class="field" style="display:flex;align-items:flex-end">
+                        <label class="check">
+                            <input type="checkbox" id="recStoreCard">
+                            <span>Simpan kartu (storeCard)</span>
+                        </label>
+                    </div>
+                </div>
+            </div>
+        </details>
+
+        <div class="summary" id="readiness" style="margin-top:14px"></div>
+
+        <div class="divider"></div>
+
         <div class="row" style="margin-bottom:14px">
             <label class="check">
                 <input type="checkbox" id="applyDiscount">
@@ -151,6 +322,169 @@
     $('applyDiscount').addEventListener('change', calcTotal);
     calcTotal();
 
+    // ---- Optional extra data (sent to the widget via setPaymentMetadata) ----
+    const EXTRA_KEY = 'apibayar.testapp.paymentLink.extra';
+    const EXTRA_FIELDS = [
+        'customerEmail', 'customerPhone',
+        'billStreet', 'billCity', 'billPostcode', 'billProvince',
+        'itemName', 'itemCategory', 'itemQty', 'itemPrice', 'itemUrl', 'itemDesc',
+        'successUrl', 'failUrl',
+        'recUnit', 'recInterval', 'recMax', 'recStart', 'recStoreCard',
+    ];
+    const SAMPLE = {
+        customerEmail: 'budi@example.com',
+        customerPhone: '+6281234567890',
+        billStreet: 'Jl. Sudirman No. 1',
+        billCity: 'Jakarta',
+        billPostcode: '10220',
+        billProvince: 'DKI Jakarta',
+        itemName: 'Test Item',
+        itemCategory: 'others',
+        itemQty: '1',
+        itemPrice: '',
+        itemUrl: 'https://example.com/item',
+        itemDesc: 'Test item',
+        successUrl: 'https://example.com/success',
+        failUrl: 'https://example.com/fail',
+    };
+
+    const val = (id) => {
+        const el = $(id);
+        return el.type === 'checkbox' ? el.checked : el.value.trim();
+    };
+
+    function saveExtra() {
+        const data = {};
+        EXTRA_FIELDS.forEach((id) => (data[id] = val(id)));
+        try {
+            localStorage.setItem(EXTRA_KEY, JSON.stringify(data));
+        } catch (_) {}
+    }
+
+    function applyExtra(data) {
+        EXTRA_FIELDS.forEach((id) => {
+            const el = $(id);
+            const v = data[id];
+            if (el.type === 'checkbox') el.checked = !!v;
+            else el.value = v === undefined || v === null ? '' : String(v);
+        });
+    }
+
+    try {
+        applyExtra(JSON.parse(localStorage.getItem(EXTRA_KEY) || '{}'));
+    } catch (_) {}
+
+    function splitName(full) {
+        const parts = full.split(/\s+/).filter(Boolean);
+        if (!parts.length) return { firstName: '', lastName: '' };
+        return { firstName: parts[0], lastName: parts.slice(1).join(' ') || parts[0] };
+    }
+
+    /** Build the object passed to widget.setPaymentMetadata(). */
+    function buildPaymentMetadata(total) {
+        const customerName = $('customerName').value.trim();
+        const { firstName, lastName } = splitName(customerName);
+
+        const itemInfo = [];
+        if (val('itemName')) {
+            const qty = parseInt(val('itemQty'), 10) || 1;
+            const price = parseInt(val('itemPrice'), 10) || Math.round(total / qty);
+            itemInfo.push({
+                category: val('itemCategory') || 'others',
+                name: val('itemName'),
+                quantity: String(qty),
+                unitPrice: String(price),
+                url: val('itemUrl'),
+                description: val('itemDesc') || val('itemName'),
+            });
+        }
+
+        const meta = {
+            description: $('description').value.trim(),
+            customerName,
+            customerEmail: val('customerEmail'),
+            customerPhone: val('customerPhone'),
+            firstName,
+            lastName,
+            billingInfo: {
+                street: val('billStreet'),
+                city: val('billCity'),
+                postcodeZip: val('billPostcode'),
+                provinceState: val('billProvince'),
+            },
+            itemInfo,
+            urlCallbackInfo: {
+                successUrl: val('successUrl'),
+                failUrl: val('failUrl'),
+            },
+        };
+
+        if (val('recUnit')) {
+            meta.recurringInfo = {
+                intervalUnit: val('recUnit'),
+                interval: parseInt(val('recInterval'), 10) || 1,
+                maxInterval: parseInt(val('recMax'), 10) || 1,
+                storeCard: val('recStoreCard'),
+            };
+            if (val('recStart')) meta.recurringInfo.startDate = val('recStart');
+        }
+        return meta;
+    }
+
+    /** Mirror the widget's own enable/disable rules so the tester knows what will be selectable. */
+    function renderReadiness() {
+        const m = buildPaymentMetadata(calcTotal().nominal);
+        const missing = (pairs) => pairs.filter(([, ok]) => !ok).map(([label]) => label);
+        const b = m.billingInfo;
+
+        const ccBase = missing([
+            ['nama', m.firstName && m.lastName],
+            ['email', m.customerEmail],
+            ['no HP', m.customerPhone],
+        ]);
+        const paylater = missing([
+            ['nama', m.firstName],
+            ['email', m.customerEmail],
+            ['no HP +62', m.customerPhone.startsWith('+62')],
+            ['alamat billing', b.street && b.city && b.postcodeZip && b.provinceState],
+            ['item + URL item', m.itemInfo.length && m.itemInfo[0].url],
+            ['success/fail URL', m.urlCallbackInfo.successUrl && m.urlCallbackInfo.failUrl],
+        ]);
+        const recurring = ccBase.concat(m.recurringInfo ? [] : ['data recurring']);
+
+        const rows = [
+            ['VA / BT / QRIS / E-Wallet', []],
+            ['Credit Card (Standard, One Click)', ccBase],
+            ['Credit Card Recurring', recurring],
+            ['Paylater (Indodana, Shopee Paylater)', paylater],
+        ];
+        $('readiness').innerHTML = rows
+            .map(([label, miss]) => `<div class="summary__row"><span>${label}</span><span>${
+                miss.length ? 'kurang: ' + miss.join(', ') : 'siap'
+            }</span></div>`)
+            .join('');
+    }
+
+    EXTRA_FIELDS.concat(['customerName', 'nominal', 'applyDiscount']).forEach((id) => {
+        const el = $(id);
+        el.addEventListener('input', () => { saveExtra(); renderReadiness(); });
+        el.addEventListener('change', () => { saveExtra(); renderReadiness(); });
+    });
+
+    $('fillSample').addEventListener('click', () => {
+        applyExtra({ ...EXTRA_FIELDS.reduce((o, id) => ((o[id] = val(id)), o), {}), ...SAMPLE });
+        saveExtra();
+        renderReadiness();
+    });
+
+    $('clearExtra').addEventListener('click', () => {
+        applyExtra({});
+        saveExtra();
+        renderReadiness();
+    });
+
+    renderReadiness();
+
     function showError(msg) {
         $('payError').textContent = msg;
         $('payError').hidden = false;
@@ -211,12 +545,11 @@
 
         setLoading(true);
         try {
+            const paymentMetadata = buildPaymentMetadata(nominal);
             const metadata = {};
-            const name = $('customerName').value.trim();
-            if (name) {
-                const parts = name.split(' ');
-                metadata.firstName = parts[0];
-                metadata.lastName = parts.slice(1).join(' ') || parts[0];
+            if (paymentMetadata.firstName) {
+                metadata.firstName = paymentMetadata.firstName;
+                metadata.lastName = paymentMetadata.lastName;
             }
 
             const json = await App.apiFetch('/payment/v1/widget/token/server', {
@@ -246,6 +579,11 @@
                 access_token: accessToken,
                 sandbox: App.config().sandbox,
             });
+
+            // The widget only reads customer/billing/item data from here
+            // (token-server metadata is not forwarded to it).
+            widget.setPaymentMetadata(paymentMetadata);
+            console.log('setPaymentMetadata', paymentMetadata);
 
             widget.on('payment-success', (event, data) => {
                 console.log('payment-success', data);
