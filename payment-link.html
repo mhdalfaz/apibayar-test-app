@@ -14,13 +14,44 @@
     <h1>Payment Link</h1>
     <p class="lede">
         Token widget digenerate dari secret merchant, lalu widget dibuka supaya bisa
-        langsung scan QR / bayar lewat VA, bank transfer, atau e-wallet.
+        langsung scan QR / bayar lewat VA, bank transfer, atau e-wallet. Pilih sumber data
+        <strong>Mock</strong> untuk menjalankan widget dengan backend tiruan (tanpa token, tanpa transaksi di server).
     </p>
 
     <section class="card">
         <div class="card__head">
             <h2 style="margin:0">Parameter Transaksi</h2>
             <span class="card__hint" id="envHint"></span>
+        </div>
+
+        <div class="field">
+            <label for="dataSource">Sumber data</label>
+            <select id="dataSource">
+                <option value="api">API &mdash; token asli, widget memanggil API environment aktif</option>
+                <option value="mock">Mock &mdash; backend tiruan di browser (QA: limit, status, tanpa token)</option>
+            </select>
+            <span class="muted small" id="dataSourceHint"></span>
+        </div>
+
+        <div id="mockSettings" hidden>
+            <div class="field">
+                <label for="mockResult">Hasil setelah pembayaran dibuat</label>
+                <select id="mockResult"></select>
+                <span class="muted small">Widget mengecek status setiap 5 dtk.</span>
+            </div>
+            <div class="field">
+                <label for="mockChannels">Limit channel tiruan</label>
+                <textarea id="mockChannels" rows="9" class="mono"></textarea>
+                <span class="muted small">
+                    Per baris: <span class="mono">CURRENCY METODE CHANNEL limit adminFee</span> (metode: QR, VA, BT, CC, EW; limit 0 = tanpa batas).
+                    Nominal + admin fee &gt; limit &rarr; channel nonaktif, sama seperti BE. Bawaan mengikuti data dev.
+                    Contoh uji: 10.000.000 vs 10.000.001 (QRIS), 99.996.000 vs 99.996.001 (VA BNI + fee 4.000), MYR 5.000 (Boost).
+                </span>
+                <div class="row" style="margin-top:8px">
+                    <button class="btn btn--ghost btn--sm" id="mockChannelsReset" type="button">Kembalikan limit bawaan</button>
+                </div>
+            </div>
+            <div class="divider"></div>
         </div>
 
         <div class="field">
@@ -253,6 +284,14 @@
 
     <section class="card">
         <div class="card__head">
+            <h2 style="margin:0">Log Event Widget</h2>
+            <button class="btn btn--ghost btn--sm" id="clearEvents" type="button">Bersihkan</button>
+        </div>
+        <pre class="output" id="eventLog" style="max-height:260px;overflow:auto">Belum ada event.</pre>
+    </section>
+
+    <section class="card">
+        <div class="card__head">
             <h2 style="margin:0">Response API</h2>
             <div class="row">
                 <button class="btn btn--ghost btn--sm" id="copyResponse">Copy</button>
@@ -280,18 +319,77 @@
 
 <script src="https://cdn.jsdelivr.net/npm/qrcode/build/qrcode.min.js"></script>
 <script src="assets/app.js"></script>
+<script src="assets/widget-mock.js"></script>
 <script src="assets/network-sim.js"></script>
 <script>NetSim.mountPanel(document.getElementById('netsimCard'));</script>
 <script>
 (function () {
     const $ = (id) => document.getElementById(id);
 
-    if (!App.requireToken()) return;
+    const SOURCE_KEY = 'apibayar.testapp.paymentLink.source';
+    const hasToken = !!App.token();
+    let source = 'api';
+    try { source = localStorage.getItem(SOURCE_KEY) || 'api'; } catch (_) {}
+    // Without a token the page is still usable in mock mode.
+    if (!hasToken) source = 'mock';
 
     App.mountChrome();
     $('envHint').textContent = `${App.config().label} · ${App.config().apiBase}`;
 
     let lastResponse = null;
+
+    // ---- Data source (API / Mock) ----
+    $('mockResult').innerHTML = Object.entries(MockBackend.RESULTS)
+        .map(([v, t]) => `<option value="${v}">${t}</option>`).join('');
+    $('mockResult').value = MockBackend.result();
+    $('mockResult').addEventListener('change', () => MockBackend.saveResult($('mockResult').value));
+    $('mockChannels').value = MockBackend.channelText();
+    $('mockChannels').addEventListener('input', () => MockBackend.saveChannels($('mockChannels').value));
+    $('mockChannelsReset').addEventListener('click', () => {
+        $('mockChannels').value = MockBackend.DEFAULT_CHANNELS;
+        MockBackend.saveChannels(MockBackend.DEFAULT_CHANNELS);
+    });
+
+    if (!hasToken) $('dataSource').querySelector('option[value=api]').disabled = true;
+    function applySource() {
+        source = $('dataSource').value;
+        try { localStorage.setItem(SOURCE_KEY, source); } catch (_) {}
+        const mock = source === 'mock';
+        $('mockSettings').hidden = !mock;
+        $('dataSourceHint').textContent = mock
+            ? (hasToken
+                ? 'Token tidak dipakai. Request widget dijawab di browser.'
+                : 'Belum ada token: hanya mode Mock yang tersedia. Simpan token di halaman awal untuk mode API.')
+            : 'Widget token dibuat lewat POST /payment/v1/widget/token/server.';
+    }
+    $('dataSource').value = source;
+    $('dataSource').addEventListener('change', applySource);
+    applySource();
+
+    // ---- Widget event log ----
+    const events = [];
+    const renderEvents = () => {
+        $('eventLog').textContent = events.length ? events.join('\n') : 'Belum ada event.';
+    };
+    $('clearEvents').addEventListener('click', () => { events.length = 0; renderEvents(); });
+    function describeEvent(name, data) {
+        if (!data) return '';
+        if (name === 'methods-loaded') {
+            const un = (data.unavailableMethods || [])
+                .map((u) => `${u.methodId}${u.channelId ? '/' + u.channelId : ''}:${u.reason}${u.maxAmount ? '(' + u.maxAmount + ')' : ''}`);
+            return ' unavailable=' + (un.length ? un.join(', ') : '-');
+        }
+        if (name === 'method-selected') return ` ${data.methodId}/${data.channelId}`;
+        if (name === 'error') return ` ${data.code || ''} ${data.message || ''}`;
+        if (data.reason || data.message) return ` ${data.reason || ''} ${data.message || ''}`;
+        if (data.status && data.status.paymentStatusName) return ' ' + data.status.paymentStatusName;
+        return '';
+    }
+    const EVENT_NAMES = [
+        'init', 'open', 'close', 'load', 'error', 'methods-loaded', 'method-selected', 'payment-processing',
+        'payment-requested', 'payment-success', 'payment-failed', 'payment-cancelled', 'payment-expired',
+    ];
+    let currentWidget = null;
 
     function generateReferenceId() {
         const now = new Date();
@@ -556,7 +654,14 @@
                 metadata.lastName = paymentMetadata.lastName;
             }
 
-            const json = await App.apiFetch('/payment/v1/widget/token/server', {
+            if (currentWidget) {
+                try { currentWidget.close(); } catch (_) {}
+            }
+            const mock = source === 'mock';
+            if (mock) NetSim.resetCounter(); else MockBackend.stop();
+            const json = mock
+                ? MockBackend.start({ referenceId, nominal, currency })
+                : await App.apiFetch('/payment/v1/widget/token/server', {
                 method: 'POST',
                 body: {
                     referenceId,
@@ -578,6 +683,12 @@
             const lib = await App.loadWidgetScript();
             const Widget = lib.APIBayarWidget || lib.default;
             const widget = new Widget();
+            currentWidget = widget;
+            const names = Widget.eventTypes ? Object.values(Widget.eventTypes) : EVENT_NAMES;
+            names.forEach((name) => widget.on(name, (_, data) => {
+                events.unshift(`${new Date().toLocaleTimeString('id-ID')}  ${name}${describeEvent(name, data)}`);
+                renderEvents();
+            }));
 
             widget.init({
                 access_token: accessToken,

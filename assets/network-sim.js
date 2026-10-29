@@ -1,10 +1,10 @@
 /**
- * Network simulation for QA (payment-link.html and widget-mock.html).
+ * Network simulation for QA (payment-link.html).
  *
  * Wraps window.fetch and intercepts widget API calls (/payment/v1/widget/*),
  * except the token endpoint used by the test app itself. Everything else goes
  * to whatever fetch was installed before this file (the real API, or the mock
- * backend on widget-mock.html).
+ * backend from widget-mock.js in mock mode).
  *
  * Settings are kept in localStorage so they survive a reload.
  * The shared panel UI is rendered by NetSim.mountPanel(container).

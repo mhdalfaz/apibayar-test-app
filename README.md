@@ -10,12 +10,12 @@ dan tanpa dependency** — cukup buka `index.html` di browser.
 apibayar-test-app/
 ├── index.html          # input bearer token + daftar tool
 ├── payment-link.html   # generate widget token, buka payment widget
-├── widget-mock.html    # widget dengan backend tiruan (QA: limit, timeout, status)
 ├── qr-generator.html   # ubah string/response API jadi QR code
 ├── decrypt-balance.html # decrypt saldo wallet terenkripsi (uniq_key)
 ├── assets/
 │   ├── app.js          # helper: token storage, env config, api fetch
 │   ├── network-sim.js  # simulasi delay/timeout/offline/409/error untuk widget (QA)
+│   ├── widget-mock.js  # backend tiruan widget untuk mode Mock (QA)
 │   └── theme.css       # tema hitam-putih bersama
 ├── serve.ps1           # static server opsional
 ├── README.md
@@ -69,11 +69,21 @@ yang dipilih. Jangan commit token asli ke git.
 - Response API ditampilkan penuh, plus QR langsung kalau response punya `data.qrCode`.
 - Tombol **Buka di QR Generator** meneruskan payload QR ke halaman berikutnya.
 
+### Sumber data: API / Mock
+
+- **API** (default): butuh token, widget token dibuat lewat `token/server`, widget memanggil API environment aktif.
+- **Mock** (`assets/widget-mock.js`): backend tiruan di browser, tanpa token dan tanpa transaksi di server.
+  Bisa dipakai walau belum ada token.
+  - **Limit channel tiruan** per baris: `CURRENCY METODE CHANNEL limit adminFee` (bawaan mengikuti data dev).
+    Nominal + admin fee > limit → channel nonaktif dengan teks "Maksimal Rp…/RM…".
+  - **Hasil setelah pembayaran dibuat**: tetap Unpaid, atau Paid/Failed/Expired setelah 10 dtk (uji polling status).
+- Kartu **Log Event Widget** menampilkan semua event (`methods-loaded`, `payment-processing`, `error`, `payment-cancelled`, dll.).
+
 ### Simulasi Jaringan (QA)
 
-Kartu **Simulasi Jaringan** (`assets/network-sim.js`, juga dipakai di `widget-mock.html`) membungkus `fetch` dan
-mencegat request widget `/payment/v1/widget/*` (kecuali `token/server`). Tidak ada perubahan di server;
-request lain tetap ke API asli. Pengaturan disimpan di `localStorage` dan berlaku untuk widget berikutnya.
+Kartu **Simulasi Jaringan** (`assets/network-sim.js`) membungkus `fetch` dan
+mencegat request widget `/payment/v1/widget/*` (kecuali `token/server`), baik mode API maupun Mock.
+Tidak ada perubahan di server; request lain tetap ke API asli. Pengaturan disimpan di `localStorage` dan berlaku untuk widget berikutnya.
 
 | Skenario | Efek | Yang diuji |
 |---|---|---|
@@ -91,16 +101,6 @@ request lain tetap ke API asli. Pengaturan disimpan di `localStorage` dan berlak
   mengubah data provider.
 - **URL widget**: memuat build widget lain (mis. hasil branch) sebagai ganti widget environment aktif.
 - Log request terlihat di kartu yang sama. Matikan centang **Aktifkan simulasi** untuk kembali normal.
-
-## widget-mock.html
-
-- Widget asli (environment aktif, atau **URL widget** dari panel simulasi) dengan **backend tiruan** di browser:
-  tidak butuh token, tidak ada transaksi di server.
-- **Limit channel tiruan** per baris: `CURRENCY METODE CHANNEL limit adminFee` (bawaan mengikuti data dev).
-  Nominal + admin fee > limit → channel nonaktif dengan teks "Maksimal Rp…/RM…".
-- **Hasil setelah pembayaran dibuat**: tetap Unpaid, atau Paid/Failed/Expired setelah 10 dtk (uji polling status).
-- Panel **Simulasi Jaringan** yang sama berlaku di atas backend tiruan (delay, timeout, offline, 409, error).
-- Log event widget (`methods-loaded`, `payment-processing`, `error`, `payment-cancelled`, dll.) tampil di halaman.
 
 ## qr-generator.html
 
