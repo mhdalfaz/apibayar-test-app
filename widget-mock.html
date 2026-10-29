@@ -1,0 +1,285 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Widget Mock &mdash; API Bayar Test App</title>
+    <link rel="stylesheet" href="assets/theme.css">
+</head>
+<body>
+
+<div id="chrome"></div>
+
+<main class="page">
+    <h1>Widget Mock</h1>
+    <p class="lede">
+        Widget asli dijalankan dengan <strong>backend tiruan</strong>: daftar metode, limit per channel,
+        dan respons pembayaran dibuat di browser. Tidak butuh token dan tidak ada transaksi yang tercatat
+        di server. Cocok untuk menguji tampilan dan perilaku widget (limit, delay, timeout, offline, 409,
+        error, status Paid/Expired) tanpa bergantung pada data merchant atau provider.
+    </p>
+
+    <section class="card">
+        <div class="card__head">
+            <h2 style="margin:0">Sesi Widget</h2>
+            <span class="card__hint" id="widgetHint"></span>
+        </div>
+
+        <div class="grid-2">
+            <div class="field">
+                <span class="field__label">Currency</span>
+                <select id="currency">
+                    <option value="IDR">IDR</option>
+                    <option value="MYR">MYR</option>
+                </select>
+            </div>
+            <div class="field">
+                <span class="field__label">Nominal</span>
+                <input type="number" id="nominal" value="200000000" min="1" step="1">
+            </div>
+        </div>
+
+        <div class="field">
+            <span class="field__label">Hasil setelah pembayaran dibuat</span>
+            <select id="afterPay">
+                <option value="unpaid">Tetap menunggu pembayaran (Unpaid)</option>
+                <option value="paid">Lunas setelah 10 dtk (Paid)</option>
+                <option value="failed">Gagal setelah 10 dtk (Failed)</option>
+                <option value="expired">Kedaluwarsa setelah 10 dtk (Expired)</option>
+            </select>
+            <span class="muted small">Widget mengecek status setiap 5 dtk.</span>
+        </div>
+
+        <div class="field">
+            <span class="field__label">Limit channel tiruan</span>
+            <textarea id="channelConfig" rows="9" class="mono"></textarea>
+            <span class="muted small">
+                Format per baris: <span class="mono">CURRENCY METODE CHANNEL limit adminFee</span>.
+                Nama metode: QR, VA, BT, CC, EW. Limit 0 = tanpa batas. Nominal + admin fee &gt; limit → channel nonaktif,
+                sama seperti perhitungan BE. Bawaan mengikuti data dev.
+            </span>
+        </div>
+
+        <div class="row">
+            <button class="btn" id="openWidget" type="button">Buka Widget</button>
+            <button class="btn btn--ghost btn--sm" id="resetChannels" type="button">Kembalikan limit bawaan</button>
+        </div>
+
+        <div class="summary" style="margin-top:14px">
+            <div class="summary__row"><span>Contoh uji IDR</span><span class="mono small">10.000.000 vs 10.000.001 (QRIS), 99.996.000 vs 99.996.001 (VA BNI + fee 4.000), 300.000.000 (VA BRI)</span></div>
+            <div class="summary__row"><span>Contoh uji MYR</span><span class="mono small">5.000 (Boost nonaktif, GrabPay aktif)</span></div>
+        </div>
+    </section>
+
+    <section class="card" id="netsimCard"></section>
+
+    <section class="card">
+        <div class="card__head">
+            <h2 style="margin:0">Log Event Widget</h2>
+            <button class="btn btn--ghost btn--sm" id="clearEvents" type="button">Bersihkan</button>
+        </div>
+        <pre class="output" id="eventLog" style="max-height:260px;overflow:auto">Belum ada event.</pre>
+    </section>
+
+    <div id="payment-widget"></div>
+
+    <footer class="footer">
+        <a href="index.html">&larr; Kembali ke daftar tool</a>
+    </footer>
+</main>
+
+<script src="assets/app.js"></script>
+<script>
+// Mock widget backend. Installed before network-sim.js so the simulation panel
+// wraps it (delay/timeout/offline/409/error apply on top of these responses).
+(function () {
+    const CHANNEL_KEY = 'apibayar.testapp.mockChannels';
+    const METHOD_NAMES = { QR: 'QRIS', VA: 'Virtual Account', BT: 'Bank Transfer', CC: 'Kartu Kredit', EW: 'E-Wallet' };
+    const DEFAULT_CHANNELS = [
+        'IDR QR QRIS 10000000 0',
+        'IDR VA BCA 1000000000 0',
+        'IDR VA BRI 250000000 0',
+        'IDR VA BNI 100000000 4000',
+        'IDR VA BSI 50000000 0',
+        'IDR BT BCA 20000000 0',
+        'IDR CC CCARD 20000000 0',
+        'MYR EW BOOST 1000 0',
+        'MYR EW GRABPAY 10000 0',
+    ].join('\n');
+
+    const session = { currency: 'IDR', nominal: 0, payment: null, paidAt: 0, cancelled: false };
+
+    function parseChannels(text) {
+        return String(text || '').split('\n').map((l) => l.trim()).filter(Boolean).map((l) => {
+            const [currency, method, code, limit, fee] = l.split(/\s+/);
+            return {
+                currency: (currency || '').toUpperCase(),
+                method: (method || '').toUpperCase(),
+                code: (code || '').toUpperCase(),
+                limit: Number(limit) || 0,
+                fee: Number(fee) || 0,
+            };
+        }).filter((c) => c.currency && c.method && c.code);
+    }
+
+    function paymentMethods() {
+        const grouped = {};
+        parseChannels(MockBackend.channelText()).filter((c) => c.currency === session.currency).forEach((c) => {
+            if (!grouped[c.method]) grouped[c.method] = { id: c.method, paymentMethodName: METHOD_NAMES[c.method] || c.method, paymentChannels: [] };
+            const ok = c.limit <= 0 || session.nominal + c.fee <= c.limit;
+            const ch = {
+                id: c.code, code: c.code, name: c.code === 'CCARD' ? 'Kartu Kredit' : c.code,
+                userChargeNominal: c.fee, userChargePercentage: 0, logo: '',
+                maxTransactionLimit: c.limit, isAvailable: ok,
+            };
+            if (!ok) ch.unavailableReason = 'max_amount';
+            grouped[c.method].paymentChannels.push(ch);
+        });
+        return Object.values(grouped);
+    }
+
+    function statusName() {
+        if (session.cancelled) return 'Cancelled';
+        if (!session.payment) return 'Unpaid';
+        const result = document.getElementById('afterPay').value;
+        if (result === 'unpaid' || Date.now() < session.paidAt) return 'Unpaid';
+        return { paid: 'Paid', failed: 'Failed', expired: 'Expired' }[result];
+    }
+
+    function ok(data) {
+        return new Response(JSON.stringify({ status: 'OK', data }), { status: 200, headers: { 'Content-Type': 'application/json' } });
+    }
+
+    function createPayment(body) {
+        const now = Math.floor(Date.now() / 1000);
+        const nominal = session.nominal + (Number(body.adminFee) || 0);
+        const ref = 'MOCK-' + now;
+        session.payment = {
+            id: 'mock-' + now,
+            referenceId: ref,
+            nominal,
+            currency: session.currency,
+            paymentMethod: body.paymentMethodCode,
+            paymentChannel: body.paymentChannelCode,
+            paymentStatusName: 'Unpaid',
+            expiredAt: now + 3600,
+            virtualAccountNumber: '8808' + String(now).slice(-10),
+            bankAccountNumber: '1234567890',
+            qrCode: '00020101021226670016COM.MOCK.WWW0118936000000000000000303UMI51440014ID.CO.QRIS.WWW0215ID20000000000000303UMI5204581253033605802ID5913APIBAYAR MOCK6007JAKARTA6304ABCD',
+            eWalletLink: '',
+        };
+        session.paidAt = Date.now() + 10000;
+        return session.payment;
+    }
+
+    const realFetch = window.fetch.bind(window);
+    window.fetch = async function (input, init) {
+        const url = typeof input === 'string' ? input : input && input.url;
+        let path = '';
+        try { path = new URL(url, location.href).pathname; } catch (_) {}
+        if (!path.startsWith('/payment/v1/widget/')) return realFetch(input, init);
+        const endpoint = path.slice('/payment/v1/widget/'.length);
+        switch (endpoint) {
+            case 'payment/status':
+                return ok({ ...(session.payment || {}), currency: session.currency, nominal: session.payment ? session.payment.nominal : session.nominal, paymentStatusName: statusName() });
+            case 'payment-channels':
+                return ok({ nominal: session.nominal, currency: session.currency, referenceId: 'MOCK-REF', paymentMethods: paymentMethods() });
+            case 'payment/request':
+                return ok(createPayment(JSON.parse((init && init.body) || '{}')));
+            case 'payment/cancel':
+                session.cancelled = true;
+                return ok({});
+            default:
+                return ok({});
+        }
+    };
+
+    window.MockBackend = {
+        DEFAULT_CHANNELS,
+        channelText() {
+            try { return localStorage.getItem(CHANNEL_KEY) || DEFAULT_CHANNELS; } catch (_) { return DEFAULT_CHANNELS; }
+        },
+        saveChannels(text) {
+            try { localStorage.setItem(CHANNEL_KEY, text); } catch (_) {}
+        },
+        start(currency, nominal) {
+            Object.assign(session, { currency, nominal, payment: null, paidAt: 0, cancelled: false });
+        },
+    };
+})();
+</script>
+<script src="assets/network-sim.js"></script>
+<script>
+(function () {
+    const $ = (id) => document.getElementById(id);
+    App.mountChrome();
+    NetSim.mountPanel($('netsimCard'));
+
+    $('channelConfig').value = MockBackend.channelText();
+    $('channelConfig').addEventListener('input', () => MockBackend.saveChannels($('channelConfig').value));
+    $('resetChannels').addEventListener('click', () => {
+        $('channelConfig').value = MockBackend.DEFAULT_CHANNELS;
+        MockBackend.saveChannels(MockBackend.DEFAULT_CHANNELS);
+    });
+
+    const widgetSrc = () => NetSim.widgetScript() || App.config().widgetScript;
+    $('widgetHint').textContent = 'widget: ' + widgetSrc();
+
+    const events = [];
+    const renderEvents = () => {
+        $('eventLog').textContent = events.length ? events.join('\n') : 'Belum ada event.';
+    };
+    $('clearEvents').addEventListener('click', () => { events.length = 0; renderEvents(); });
+
+    function describe(name, data) {
+        if (!data) return '';
+        if (name === 'methods-loaded') {
+            const un = (data.unavailableMethods || []).map((u) => `${u.methodId}/${u.channelId}:${u.reason}${u.maxAmount ? '(' + u.maxAmount + ')' : ''}`);
+            return un.length ? ' unavailable=' + un.join(', ') : ' unavailable=-';
+        }
+        if (name === 'method-selected') return ` ${data.methodId}/${data.channelId}`;
+        if (name === 'error') return ` ${data.code || ''} ${data.message || ''}`;
+        if (data.reason || data.message) return ` ${data.reason || ''} ${data.message || ''}`;
+        if (data.status && data.status.paymentStatusName) return ' ' + data.status.paymentStatusName;
+        return '';
+    }
+
+    let widget = null;
+    $('openWidget').addEventListener('click', async () => {
+        const currency = $('currency').value;
+        const nominal = Number($('nominal').value) || 0;
+        if (widget) {
+            try { widget.close(); } catch (_) {}
+        }
+        MockBackend.start(currency, nominal);
+        NetSim.resetCounter();
+
+        try {
+            const lib = await App.loadWidgetScript();
+            const Widget = lib.APIBayarWidget || lib.default;
+            widget = new Widget();
+            const types = Widget.eventTypes ? Object.values(Widget.eventTypes) : [
+                'init', 'open', 'close', 'load', 'error', 'methods-loaded', 'method-selected', 'payment-processing',
+                'payment-requested', 'payment-success', 'payment-failed', 'payment-cancelled', 'payment-expired',
+            ];
+            types.forEach((name) => widget.on(name, (_, data) => {
+                events.unshift(`${new Date().toLocaleTimeString('id-ID')}  ${name}${describe(name, data)}`);
+                renderEvents();
+            }));
+            widget.init({ access_token: 'mock-token', sandbox: true });
+            widget.setPaymentMetadata({
+                customerEmail: 'budi@example.com',
+                customerPhone: '+6281234567890',
+                firstName: 'Budi',
+                lastName: 'Test',
+            });
+            widget.open();
+        } catch (err) {
+            console.error(err);
+            alert('Gagal membuka widget: ' + err.message);
+        }
+    });
+})();
+</script>
+</body>
+</html>

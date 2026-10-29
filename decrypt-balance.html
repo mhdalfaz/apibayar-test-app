@@ -1,0 +1,274 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Decrypt Balance &mdash; API Bayar Test App</title>
+    <link rel="stylesheet" href="assets/theme.css">
+</head>
+<body>
+
+<main class="page">
+    <h1>Decrypt Wallet Balance</h1>
+    <p class="lede">
+        Lihat angka asli <code>active_balance</code> / <code>hold_balance</code> dari
+        <code>t_wallet</code> / <code>t_mutations</code>. Algoritma sama dengan
+        <code>utils.AesDecrypt</code> di backend: AES-GCM, key = <code>m_users.uniq_key</code>,
+        12 byte pertama hex = nonce. Semua proses jalan di browser (WebCrypto), tidak ada request keluar.
+    </p>
+
+    <section class="card">
+        <div class="card__head">
+            <h2 style="margin:0">Input</h2>
+            <span class="card__hint">Ctrl+Enter untuk decrypt</span>
+        </div>
+
+        <div class="field">
+            <label for="keyInput">Uniq key user (m_users.uniq_key)</label>
+            <input class="mono" id="keyInput" type="text" spellcheck="false" autocomplete="off"
+                placeholder="X8TOJPP58CT00CDIK67ESXJMBW8K57ZN">
+            <span class="small muted" id="keyInfo"></span>
+        </div>
+
+        <div class="field">
+            <label for="valueInput">Encrypted value &mdash; satu hex per baris, atau paste dokumen JSON wallet</label>
+            <textarea class="mono" id="valueInput" rows="7" spellcheck="false"
+                placeholder="83399a9aae4b8328fc116781ca257cf1bd7a34b4c92d84d9a373510b66aef4668d0c&#10;&#10;atau&#10;&#10;{ &quot;active_balance&quot;: &quot;83399a9a...&quot;, &quot;hold_balance&quot;: &quot;...&quot; }"></textarea>
+        </div>
+
+        <div class="row">
+            <button class="btn" id="decryptBtn">Decrypt</button>
+            <button class="btn btn--ghost btn--sm" id="sampleBtn">Isi contoh</button>
+            <button class="btn btn--ghost btn--sm" id="clearBtn">Kosongkan</button>
+        </div>
+
+        <div class="alert alert--error" id="errorBox" hidden></div>
+    </section>
+
+    <section class="card" id="resultCard" hidden>
+        <div class="card__head">
+            <h2 style="margin:0">Hasil</h2>
+            <span class="card__hint" id="resultHint"></span>
+        </div>
+        <div class="summary" id="resultList"></div>
+    </section>
+
+    <section class="card">
+        <div class="card__head">
+            <h2 style="margin:0">Encrypt (opsional)</h2>
+            <span class="card__hint">buat nilai terenkripsi baru dengan key di atas, mis. untuk seed data dev</span>
+        </div>
+        <div class="field">
+            <label for="plainInput">Plaintext</label>
+            <input class="mono" id="plainInput" type="text" spellcheck="false" placeholder="234000">
+        </div>
+        <div class="row">
+            <button class="btn btn--ghost btn--sm" id="encryptBtn">Encrypt</button>
+            <button class="btn btn--ghost btn--sm" id="copyEncBtn">Copy</button>
+        </div>
+        <pre class="output hidden" id="encOutput" style="margin-top:12px"></pre>
+    </section>
+
+    <footer class="footer">
+        Tool lokal, tidak butuh bearer token. Jangan screenshot / share uniq key user produksi.
+    </footer>
+</main>
+
+<script src="assets/app.js"></script>
+<script>
+(function () {
+    const $ = (id) => document.getElementById(id);
+    const enc = new TextEncoder();
+    const dec = new TextDecoder();
+    const NONCE_SIZE = 12;
+    const TAG_SIZE = 16;
+    const HEX_RE = /^[0-9a-fA-F]+$/;
+
+    App.mountChrome();
+
+    function hexToBytes(hex) {
+        const clean = hex.trim();
+        if (!clean || clean.length % 2 !== 0 || !HEX_RE.test(clean)) {
+            throw new Error('bukan hex valid');
+        }
+        const out = new Uint8Array(clean.length / 2);
+        for (let i = 0; i < out.length; i++) out[i] = parseInt(clean.substr(i * 2, 2), 16);
+        return out;
+    }
+
+    function bytesToHex(bytes) {
+        return [...bytes].map((b) => b.toString(16).padStart(2, '0')).join('');
+    }
+
+    // Go's aes.NewCipher([]byte(key)) accepts 16/24/32 byte keys -> AES-128/192/256.
+    async function importKey(keyString, usage) {
+        const raw = enc.encode(keyString);
+        if (![16, 24, 32].includes(raw.length)) {
+            throw new Error(`panjang key ${raw.length} byte, harus 16/24/32 (uniq_key normalnya 32 karakter)`);
+        }
+        return crypto.subtle.importKey('raw', raw, { name: 'AES-GCM' }, false, [usage]);
+    }
+
+    async function aesDecrypt(hex, key) {
+        const bytes = hexToBytes(hex);
+        if (bytes.length < NONCE_SIZE + TAG_SIZE) throw new Error('ciphertext terlalu pendek');
+        const nonce = bytes.slice(0, NONCE_SIZE);
+        const body = bytes.slice(NONCE_SIZE); // ciphertext || tag, same layout as Go Seal()
+        try {
+            const plain = await crypto.subtle.decrypt({ name: 'AES-GCM', iv: nonce }, key, body);
+            return dec.decode(plain);
+        } catch (_) {
+            throw new Error('auth gagal — uniq_key salah atau nilai bukan milik user ini');
+        }
+    }
+
+    async function aesEncrypt(text, key) {
+        const nonce = crypto.getRandomValues(new Uint8Array(NONCE_SIZE));
+        const sealed = new Uint8Array(await crypto.subtle.encrypt({ name: 'AES-GCM', iv: nonce }, key, enc.encode(text)));
+        const out = new Uint8Array(NONCE_SIZE + sealed.length);
+        out.set(nonce, 0);
+        out.set(sealed, NONCE_SIZE);
+        return bytesToHex(out);
+    }
+
+    // Collect {label, hex} entries from raw text: JSON (any depth) or one hex per line.
+    function collectEntries(text) {
+        const trimmed = text.trim();
+        if (!trimmed) return [];
+        if (trimmed.startsWith('{') || trimmed.startsWith('[')) {
+            let doc;
+            try {
+                doc = JSON.parse(trimmed);
+            } catch (err) {
+                throw new Error('JSON tidak valid: ' + err.message);
+            }
+            const found = [];
+            const walk = (node, path) => {
+                if (typeof node === 'string') {
+                    if (node.length >= (NONCE_SIZE + TAG_SIZE) * 2 && node.length % 2 === 0 && HEX_RE.test(node)) {
+                        found.push({ label: path || '(root)', hex: node });
+                    }
+                } else if (Array.isArray(node)) {
+                    node.forEach((v, i) => walk(v, `${path}[${i}]`));
+                } else if (node && typeof node === 'object') {
+                    Object.entries(node).forEach(([k, v]) => walk(v, path ? `${path}.${k}` : k));
+                }
+            };
+            walk(doc, '');
+            if (!found.length) throw new Error('Tidak ada field hex terenkripsi di JSON.');
+            return found;
+        }
+        return trimmed.split(/\r?\n/)
+            .map((line) => line.trim().replace(/^["']|["'],?$/g, ''))
+            .filter(Boolean)
+            .map((hex, i) => {
+                // Allow "label: hex" or "label = hex" lines.
+                const m = hex.match(/^([\w.\-\[\]]+)\s*[:=]\s*"?([0-9a-fA-F]+)"?,?$/);
+                return m ? { label: m[1], hex: m[2] } : { label: `#${i + 1}`, hex };
+            });
+    }
+
+    function formatPlain(value) {
+        const n = Number(value);
+        if (value.trim() === '' || !Number.isFinite(n)) return '';
+        return n.toLocaleString('id-ID', { maximumFractionDigits: 6 });
+    }
+
+    function escapeHtml(s) {
+        return String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+    }
+
+    function showError(msg) {
+        $('errorBox').textContent = msg;
+        $('errorBox').hidden = false;
+    }
+
+    function renderKeyInfo() {
+        const len = enc.encode($('keyInput').value.trim()).length;
+        $('keyInfo').textContent = len ? `${len} byte${[16, 24, 32].includes(len) ? ` → AES-${len * 8}-GCM` : ' — tidak valid'}` : '';
+    }
+
+    async function runDecrypt() {
+        $('errorBox').hidden = true;
+        $('resultCard').hidden = true;
+        const keyString = $('keyInput').value.trim();
+        if (!keyString) return showError('Uniq key belum diisi.');
+        if (!window.crypto || !crypto.subtle) {
+            return showError('WebCrypto tidak tersedia. Buka lewat file:// di Chrome/Edge atau http://localhost (serve.ps1).');
+        }
+
+        let key, entries;
+        try {
+            key = await importKey(keyString, 'decrypt');
+            entries = collectEntries($('valueInput').value);
+        } catch (err) {
+            return showError(err.message);
+        }
+        if (!entries.length) return showError('Encrypted value belum diisi.');
+
+        const rows = await Promise.all(entries.map(async (e) => {
+            try {
+                return { ...e, ok: true, value: await aesDecrypt(e.hex, key) };
+            } catch (err) {
+                return { ...e, ok: false, value: err.message };
+            }
+        }));
+
+        const okCount = rows.filter((r) => r.ok).length;
+        $('resultHint').textContent = `${okCount}/${rows.length} berhasil`;
+        $('resultList').innerHTML = rows.map((r) => {
+            const pretty = r.ok ? formatPlain(r.value) : '';
+            return `
+                <div class="summary__row">
+                    <span title="${escapeHtml(r.hex)}">${escapeHtml(r.label)}</span>
+                    <span class="mono" style="${r.ok ? '' : 'color:#c62828'}">
+                        ${r.ok ? `<strong>${escapeHtml(r.value)}</strong>${pretty && pretty !== r.value ? ` <span class="muted small">(${pretty})</span>` : ''}` : escapeHtml(r.value)}
+                    </span>
+                </div>`;
+        }).join('');
+        $('resultCard').hidden = false;
+    }
+
+    $('decryptBtn').addEventListener('click', runDecrypt);
+    $('valueInput').addEventListener('keydown', (e) => {
+        if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) runDecrypt();
+    });
+    $('keyInput').addEventListener('input', renderKeyInfo);
+    $('keyInput').addEventListener('keydown', (e) => { if (e.key === 'Enter') runDecrypt(); });
+
+    $('sampleBtn').addEventListener('click', () => {
+        $('keyInput').value = 'X8TOJPP58CT00CDIK67ESXJMBW8K57ZN';
+        $('valueInput').value = '83399a9aae4b8328fc116781ca257cf1bd7a34b4c92d84d9a373510b66aef4668d0c';
+        renderKeyInfo();
+        runDecrypt();
+    });
+
+    $('clearBtn').addEventListener('click', () => {
+        $('keyInput').value = '';
+        $('valueInput').value = '';
+        $('errorBox').hidden = true;
+        $('resultCard').hidden = true;
+        renderKeyInfo();
+    });
+
+    $('encryptBtn').addEventListener('click', async () => {
+        $('errorBox').hidden = true;
+        const out = $('encOutput');
+        try {
+            const key = await importKey($('keyInput').value.trim(), 'encrypt');
+            out.textContent = await aesEncrypt($('plainInput').value, key);
+            out.classList.remove('hidden');
+        } catch (err) {
+            showError(err.message);
+        }
+    });
+
+    $('copyEncBtn').addEventListener('click', async () => {
+        const text = $('encOutput').textContent;
+        if (!text) return;
+        try { await navigator.clipboard.writeText(text); } catch (_) {}
+    });
+})();
+</script>
+</body>
+</html>

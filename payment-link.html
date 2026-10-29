@@ -249,6 +249,8 @@
         <div class="alert alert--error" id="payError" hidden></div>
     </section>
 
+    <section class="card" id="netsimCard"></section>
+
     <section class="card">
         <div class="card__head">
             <h2 style="margin:0">Response API</h2>
@@ -278,6 +280,8 @@
 
 <script src="https://cdn.jsdelivr.net/npm/qrcode/build/qrcode.min.js"></script>
 <script src="assets/app.js"></script>
+<script src="assets/network-sim.js"></script>
+<script>NetSim.mountPanel(document.getElementById('netsimCard'));</script>
 <script>
 (function () {
     const $ = (id) => document.getElementById(id);
@@ -593,7 +597,19 @@
             });
             widget.on('payment-failed', (event, data) => {
                 console.log('payment-failed', data);
-                alert('Pembayaran gagal: ' + ((data && data.message) || 'tidak diketahui'));
+                // The widget emits payment-failed for buyer cancellation too, with only
+                // status.status = "Cancelled" (no message), so map the status ourselves.
+                const st = (data && data.status) || {};
+                const code = st.status || st.paymentStatusName || '';
+                if (data && data.message) {
+                    alert('Pembayaran gagal: ' + data.message);
+                } else if (code === 'Cancelled') {
+                    alert('Pembayaran dibatalkan oleh pembeli.');
+                } else if (code === 'Failed') {
+                    alert('Pembayaran gagal diproses oleh channel pembayaran' + (st.referenceId ? ' (Ref: ' + st.referenceId + ')' : '') + '.');
+                } else {
+                    alert('Pembayaran tidak berhasil' + (code ? ' (status: ' + code + ')' : '') + '.');
+                }
             });
             widget.on('error', (event, data) => {
                 console.error('widget error', data);

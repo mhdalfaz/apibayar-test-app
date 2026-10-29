@@ -153,7 +153,8 @@ h2 {
     margin-bottom: 0;
 }
 
-label,
+/* Skip labels rendered by the APIBayar widget so the test app styles do not leak into it. */
+label:not([class*='apibayar-']),
 .field__label {
     display: block;
     margin-bottom: 7px;

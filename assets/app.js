@@ -208,7 +208,7 @@ const App = {
 
     /** Muat script widget sesuai environment aktif (hanya sekali). */
     loadWidgetScript() {
-        const src = this.config().widgetScript;
+        const src = (window.NetSim && window.NetSim.widgetScript()) || this.config().widgetScript;
         return new Promise((resolve, reject) => {
             if (window.APIBayarWidget) return resolve(window.APIBayarWidget);
             const existing = document.querySelector(`script[src="${src}"]`);
