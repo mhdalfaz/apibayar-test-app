@@ -182,7 +182,8 @@
                     status: 'Conflict',
                     code: '40906',
                     errorCode: '40906',
-                    message: 'Pembayaran Anda sedang diproses. Mohon tunggu sebentar.',
+                    // Same as the real BE without Accept-Language (default English).
+                    message: 'Your payment is being processed. Please wait a moment.',
                 });
             case 'error': {
                 const status = Number(cfg.errorStatus) || 400;
