@@ -119,6 +119,13 @@ Tidak ada perubahan di server; request lain tetap ke API asli. Pengaturan disimp
 - Input bisa satu hex per baris, `label: hex`, atau paste dokumen JSON wallet (field hex dicari otomatis).
 - Ada fitur encrypt untuk bikin nilai baru (seed data dev). Tidak butuh bearer token, semua lokal via WebCrypto.
 
+## API Doc (Dev)
+
+- Kartu di `index.html` yang membuka dokumentasi API versi dev di tab baru:
+  https://fragrant-glitter-fe60.hidecode403.workers.dev/
+- Isinya build `public/` dari repo `api-bayar-doc` (branch versi berjalan). Tidak butuh token.
+- Kalau URL deploy berubah, cukup ganti `href` kartu `data-tool="api-doc-dev"`.
+
 ## Menambah tool baru
 
 1. Buat `nama-tool.html`, load `assets/theme.css` + `assets/app.js`.
