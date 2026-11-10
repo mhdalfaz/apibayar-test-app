@@ -22,6 +22,8 @@
         'IDR CC CCARD 20000000 0',
         'MYR EW BOOST 1000 0',
         'MYR EW GRABPAY 10000 0',
+        'SGD EW PAYNOW 10000 0',
+        'SGD EW GRABPAY_SG 10000 0',
     ].join('\n');
     const RESULTS = {
         unpaid: 'Tetap menunggu pembayaran (Unpaid)',

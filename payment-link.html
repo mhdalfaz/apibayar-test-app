@@ -45,7 +45,7 @@
                 <span class="muted small">
                     Per baris: <span class="mono">CURRENCY METODE CHANNEL limit adminFee</span> (metode: QR, VA, BT, CC, EW; limit 0 = tanpa batas).
                     Nominal + admin fee &gt; limit &rarr; channel nonaktif, sama seperti BE. Bawaan mengikuti data dev.
-                    Contoh uji: 10.000.000 vs 10.000.001 (QRIS), 99.996.000 vs 99.996.001 (VA BNI + fee 4.000), MYR 5.000 (Boost).
+                    Contoh uji: 10.000.000 vs 10.000.001 (QRIS), 99.996.000 vs 99.996.001 (VA BNI + fee 4.000), MYR 5.000 (Boost), SGD 10.000 vs 10.000,01 (PayNow).
                 </span>
                 <div class="row" style="margin-top:8px">
                     <button class="btn btn--ghost btn--sm" id="mockChannelsReset" type="button">Kembalikan limit bawaan</button>
@@ -178,7 +178,7 @@
                     </div>
                     <div class="field">
                         <label for="itemPrice">Harga satuan</label>
-                        <input type="number" id="itemPrice" min="1" step="1" placeholder="otomatis = total">
+                        <input type="number" id="itemPrice" min="0.01" step="any" placeholder="otomatis = total">
                     </div>
                 </div>
                 <div class="grid-2">
@@ -407,12 +407,20 @@
     genRef();
     $('genRef').addEventListener('click', genRef);
 
+    // MYR / SGD accept 2 decimals; IDR is whole numbers only.
+    const isDecimalCurrency = (currency) => currency === 'MYR' || currency === 'SGD';
+    const roundAmount = (value, currency) => (isDecimalCurrency(currency)
+        ? Math.round(value * 100) / 100
+        : Math.round(value));
+
     function calcTotal() {
         const currency = $('currency').value;
-        const nominal = parseInt($('nominal').value, 10) || 0;
-        const discount = $('applyDiscount').checked ? Math.round(nominal * 0.1) : 0;
+        const raw = parseFloat($('nominal').value) || 0;
+        const nominal = isDecimalCurrency(currency) ? raw : Math.trunc(raw);
+        const discount = $('applyDiscount').checked ? roundAmount(nominal * 0.1, currency) : 0;
         const fee = 0;
-        const total = Math.max(nominal - discount, 0);
+        // Only the discount is rounded, so invalid input (e.g. 3 decimals) still reaches the check below.
+        const total = Math.max(discount ? roundAmount(nominal - discount, currency) : nominal, 0);
         $('sumSubtotal').textContent = App.formatMoney(nominal, currency);
         $('sumDiscount').textContent = '- ' + App.formatMoney(discount, currency);
         $('sumFee').textContent = App.formatMoney(fee, currency);
@@ -421,7 +429,16 @@
     }
 
     $('nominal').addEventListener('input', calcTotal);
-    $('currency').addEventListener('change', calcTotal);
+    $('currency').addEventListener('change', () => {
+        // Decimal step for MYR/SGD, whole numbers for IDR; adjust the sample amount when switching.
+        const currency = $('currency').value;
+        const input = $('nominal');
+        input.step = isDecimalCurrency(currency) ? '0.01' : '1';
+        const current = parseFloat(input.value) || 0;
+        if (isDecimalCurrency(currency) && current >= 10000) input.value = '25.50';
+        if (!isDecimalCurrency(currency) && current < 10000) input.value = '15000';
+        calcTotal();
+    });
     $('applyDiscount').addEventListener('change', calcTotal);
     calcTotal();
 
@@ -491,7 +508,7 @@
         const itemInfo = [];
         if (val('itemName')) {
             const qty = parseInt(val('itemQty'), 10) || 1;
-            const price = parseInt(val('itemPrice'), 10) || Math.round(total / qty);
+            const price = parseFloat(val('itemPrice')) || Math.round((total / qty) * 100) / 100;
             itemInfo.push({
                 category: val('itemCategory') || 'others',
                 name: val('itemName'),
@@ -642,6 +659,12 @@
         if (!nominal || nominal < 1) return showError('Nominal tidak valid.');
         if (currency === 'IDR' && nominal < 10000) return showError('Minimal pembayaran IDR adalah Rp 10.000.');
         if (currency === 'MYR' && nominal < 1) return showError('Minimal pembayaran MYR adalah RM 1.');
+        // Same rules as BE (widget SGD): > S$1.00, max S$10,000, 2 decimals.
+        if (currency === 'SGD' && nominal < 1.01) return showError('Minimal pembayaran SGD adalah S$1,01.');
+        if (currency === 'SGD' && nominal > 10000) return showError('Maksimal pembayaran SGD adalah S$10.000,00.');
+        if (isDecimalCurrency(currency) && Math.abs(nominal * 100 - Math.round(nominal * 100)) > 1e-6) {
+            return showError('Nominal maksimal 2 angka desimal.');
+        }
 
         const referenceId = $('referenceId').value.trim() || generateReferenceId();
         $('referenceId').value = referenceId;

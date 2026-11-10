@@ -239,6 +239,9 @@ const App = {
         if (currency === 'MYR') {
             return `RM ${amount.toLocaleString('en-MY', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
         }
+        if (currency === 'SGD') {
+            return `S$ ${amount.toLocaleString('en-SG', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+        }
         return `Rp ${amount.toLocaleString('id-ID')}`;
     },
 
