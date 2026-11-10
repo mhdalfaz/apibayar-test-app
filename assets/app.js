@@ -3,13 +3,14 @@
  *
  * Penyimpanan bearer token:
  *   - sessionStorage  -> hilang saat tab ditutup
- *   - localStorage    -> hanya aktif jika user mencentang "Ingat di browser"
+ *   - localStorage    -> aktif jika "Ingat di browser" dicentang (default: dicentang)
  *   - TTL (menit)     -> token otomatis kedaluwarsa setelah durasi tertentu
  *   - reload halaman  -> token dibuang kecuali "Ingat di browser" aktif
  */
 
 const STORAGE_KEY = 'apibayar.testapp.bearer';
 const META_KEY = 'apibayar.testapp.meta';
+const REMEMBER_PREF_KEY = 'apibayar.testapp.rememberPref';
 const ENV_KEY = 'apibayar.testapp.env';
 
 const ENVIRONMENTS = {
@@ -54,9 +55,21 @@ const App = {
 
     meta() {
         try {
-            return JSON.parse(sessionStorage.getItem(META_KEY) || 'null') || {};
+            const session = JSON.parse(sessionStorage.getItem(META_KEY) || 'null');
+            if (session) return session;
+            // New tab / after reload: a remembered token only has its meta in localStorage.
+            return JSON.parse(localStorage.getItem(META_KEY) || 'null') || {};
         } catch (_) {
             return {};
+        }
+    },
+
+    /** Last choice of "Ingat di browser"; defaults to true. */
+    rememberPref() {
+        try {
+            return localStorage.getItem(REMEMBER_PREF_KEY) !== 'false';
+        } catch (_) {
+            return true;
         }
     },
 
@@ -75,6 +88,7 @@ const App = {
 
         sessionStorage.setItem(STORAGE_KEY, clean);
         sessionStorage.setItem(META_KEY, JSON.stringify(meta));
+        try { localStorage.setItem(REMEMBER_PREF_KEY, String(!!remember)); } catch (_) {}
         if (remember) {
             try {
                 localStorage.setItem(STORAGE_KEY, clean);

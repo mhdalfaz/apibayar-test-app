@@ -56,7 +56,7 @@ apibayar-test-app/
 | `sessionStorage` (default) | Hilang saat tab ditutup |
 | Masa aktif (TTL) | Default 1 jam, bisa 15 menit s/d tanpa expiry |
 | Reload halaman | Token **dibuang** saat reload, kecuali centang "Ingat di browser" |
-| "Ingat di browser" | Disimpan di `localStorage`, bertahan lintas reload |
+| "Ingat di browser" (default dicentang) | Disimpan di `localStorage`, bertahan lintas reload dan tab sampai masa aktif habis atau token dihapus |
 
 Token tidak pernah disimpan di repo, dan request hanya dikirim ke host API Bayar
 yang dipilih. Jangan commit token asli ke git.

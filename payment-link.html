@@ -678,8 +678,12 @@
                 metadata.lastName = paymentMetadata.lastName;
             }
 
+            // Drop the previous widget completely: close() stops its polling but keeps
+            // the listeners, so a later status check would alert again.
             if (currentWidget) {
                 try { currentWidget.close(); } catch (_) {}
+                try { currentWidget.removeAllListeners(); } catch (_) {}
+                currentWidget = null;
             }
             const mock = source === 'mock';
             if (mock) NetSim.resetCounter(); else MockBackend.stop();
@@ -724,11 +728,21 @@
             widget.setPaymentMetadata(paymentMetadata);
             console.log('setPaymentMetadata', paymentMetadata);
 
+            // A finished reference cannot be paid again: reopening it makes the widget
+            // emit the final status immediately. Generate a fresh one for the next try.
+            let finalShown = false;
+            const finish = () => {
+                if ($('referenceId').value.trim() === referenceId) genRef();
+                if (finalShown) return false;
+                finalShown = true;
+                return true;
+            };
             widget.on('payment-success', (event, data) => {
                 console.log('payment-success', data);
                 showError('');
                 $('payError').hidden = true;
-                alert('Pembayaran berhasil.');
+                if (!finish()) return;
+                alert('Pembayaran berhasil (Ref: ' + referenceId + '). Reference ID baru sudah dibuat untuk transaksi berikutnya.');
             });
             widget.on('payment-failed', (event, data) => {
                 console.log('payment-failed', data);
@@ -736,6 +750,7 @@
                 // status.status = "Cancelled" (no message), so map the status ourselves.
                 const st = (data && data.status) || {};
                 const code = st.status || st.paymentStatusName || '';
+                if (!finish()) return;
                 if (data && data.message) {
                     alert('Pembayaran gagal: ' + data.message);
                 } else if (code === 'Cancelled') {

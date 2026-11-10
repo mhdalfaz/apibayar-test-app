@@ -58,7 +58,7 @@
                     <option value="30">30 menit</option>
                     <option value="60" selected>1 jam</option>
                     <option value="240">4 jam</option>
-                    <option value="0">Tanpa expiry (sampai tab ditutup)</option>
+                    <option value="0">Tanpa expiry (sampai dihapus / tab ditutup)</option>
                 </select>
             </div>
             <div class="field">
@@ -70,7 +70,7 @@
         <div class="row" style="margin-bottom:14px">
             <label class="check">
                 <input type="checkbox" id="rememberToken">
-                <span>Ingat di browser (localStorage, bertahan saat reload)</span>
+                <span>Ingat di browser (localStorage, bertahan saat reload sampai masa aktif habis)</span>
             </label>
         </div>
 
@@ -154,10 +154,11 @@
         renderTokenInfo();
     });
 
+    $('rememberToken').checked = App.rememberPref();
     if (App.token()) {
         $('tokenInput').value = App.token();
         const meta = App.meta();
-        if (meta.remember) $('rememberToken').checked = true;
+        $('rememberToken').checked = !!meta.remember;
         if (meta.expiresAt) {
             const leftMin = Math.ceil((meta.expiresAt - Date.now()) / 60000);
             const opt = [...$('ttlSelect').options].find((o) => Math.abs(Number(o.value) - leftMin) <= 1);
